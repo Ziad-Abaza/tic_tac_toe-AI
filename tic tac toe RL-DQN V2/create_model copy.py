@@ -63,33 +63,12 @@ class TicTacToeEnvironment:
 
     def heuristic_move(self):
         valid = self.get_valid_moves()
-
-        def simulate_move(board_state, pos, player):
-            board_state[pos] = player
-
-        def count_immediate_wins(board_state, player):
-            count = 0
-            for pos in [i for i,v in enumerate(board_state) if v==0]:
-                board_state[pos] = player
-                win = any(all(board_state[i]==player for i in combo) for combo in [
-                    [0,1,2],[3,4,5],[6,7,8],
-                    [0,3,6],[1,4,7],[2,5,8],
-                    [0,4,8],[2,4,6]
-                ])
-                board_state[pos] = 0
-                if win:
-                    count += 1
-            return count
-
-        # 1- Win now
         for m in valid:
             self.board[m] = self.current_player
             if self.check_winner(self.current_player):
                 self.board[m] = 0
                 return m
             self.board[m] = 0
-
-        # 2- Block opponent immediate win
         opponent = -self.current_player
         for m in valid:
             self.board[m] = opponent
@@ -97,116 +76,20 @@ class TicTacToeEnvironment:
                 self.board[m] = 0
                 return m
             self.board[m] = 0
-
-        # 3- Create a fork for current player
-        for m in valid:
-            self.board[m] = self.current_player
-            wins = count_immediate_wins(self.board, self.current_player)
-            self.board[m] = 0
-            if wins >= 2:
-                return m
-
-        # 4- Block opponent fork
-        # If opponent can create a fork, try to block it.
-        opponent_fork_moves = []
-        for m in valid:
-            self.board[m] = opponent
-            wins = count_immediate_wins(self.board, opponent)
-            self.board[m] = 0
-            if wins >= 2:
-                opponent_fork_moves.append(m)
-
-        if opponent_fork_moves:
-            # If there is a move that directly blocks the fork by creating immediate threat, play it
-            for m in valid:
-                self.board[m] = self.current_player
-                if any(self.check_winner(self.current_player) for _ in [0]) :
-                    self.board[m] = 0
-                    return m
-                self.board[m] = 0
-            # prefer center, then corners, then sides that can block
-            if 4 in valid:
-                return 4
-            corners = [i for i in [0,2,6,8] if i in valid]
-            if corners:
-                return corners[0]
-            return random.choice(valid)
-
-        # 5- If center available, take it
-        if 4 in valid:
-            return 4
-
-        # 6- Prefer corners
-        corners = [i for i in [0,2,6,8] if i in valid]
-        if corners:
-            # try to pick corner that may lead to fork or best positional value via shallow minimax
-            best_corner = None
-            best_score = -9999
-            for c in corners:
-                self.board[c] = self.current_player
-                score = self._minimax_score(depth=2, player=-self.current_player)
-                self.board[c] = 0
-                if score > best_score:
-                    best_score = score
-                    best_corner = c
-            return best_corner
-
-        # 7- Then sides
-        sides = [i for i in [1,3,5,7] if i in valid]
-        if sides:
-            best_side = None
-            best_score = -9999
-            for s in sides:
-                self.board[s] = self.current_player
-                score = self._minimax_score(depth=2, player=-self.current_player)
-                self.board[s] = 0
-                if score > best_score:
-                    best_score = score
-                    best_side = s
-            return best_side
-
-        # 8- Fallback random
+        if 4 in valid: return 4
         return np.random.choice(valid)
-
-    def _minimax_score(self, depth, player):
-        if self.check_winner(-player):
-            return -100 - depth
-        if self.check_winner(player):
-            return 100 + depth
-        if 0 not in self.board or depth == 0:
-            return 0
-
-        valid = [i for i, val in enumerate(self.board) if val == 0]
-        if player == self.current_player:
-            best = -9999
-            for m in valid:
-                self.board[m] = player
-                val = self._minimax_score(depth-1, -player)
-                self.board[m] = 0
-                if val > best:
-                    best = val
-            return best
-        else:
-            best = 9999
-            for m in valid:
-                self.board[m] = player
-                val = self._minimax_score(depth-1, -player)
-                self.board[m] = 0
-                if val < best:
-                    best = val
-            return best
         
 class DQNAgent:
     def __init__(self):
         self.model = self.build_model()
         self.target_model = self.build_model()
-        self.memory = deque(maxlen=15000)
-        self.gamma = 0.99
+        self.memory = deque(maxlen=5000)
+        self.gamma = 0.95
         self.epsilon = 1.0
         self.epsilon_min = 0.05 
-        self.epsilon_decay = 0.999
+        self.epsilon_decay = 0.995
         self.batch_size = 64
-        self.update_target_every = 50
+        self.update_target_every = 20
         
     def build_model(self):
         model = tf.keras.Sequential([
@@ -216,7 +99,7 @@ class DQNAgent:
             tf.keras.layers.Dense(128, activation='relu'),
             tf.keras.layers.Dense(9, activation='linear') 
         ])
-        model.compile(optimizer=tf.keras.optimizers.Adam(0.0005), loss='mse')
+        model.compile(optimizer=tf.keras.optimizers.Adam(0.001), loss='mse')
         return model
     
     def update_target_model(self):
@@ -370,4 +253,4 @@ class DQNAgent:
 
 if __name__ == "__main__":
     agent = DQNAgent()
-    agent.train(episodes=6000)
+    agent.train(episodes=1000)

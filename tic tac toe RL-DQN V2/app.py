@@ -2,14 +2,15 @@ from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras.losses import MeanSquaredError
 
 app = Flask(__name__)
 CORS(app) 
 
-custom_objects = {'mse': MeanSquaredError()}
-
-model = tf.keras.models.load_model('tic_tac_toe.h5', custom_objects=custom_objects)
+try:
+    model = tf.keras.models.load_model('tic_tac_toe.h5')
+except:
+    from tensorflow.keras.losses import MeanSquaredError
+    model = tf.keras.models.load_model('tic_tac_toe.h5', custom_objects={'mse': MeanSquaredError()})
 
 @app.route('/')
 def index():
@@ -18,20 +19,29 @@ def index():
 @app.route('/predict', methods=['POST'])
 def predict():
     data = request.get_json()
-    board = np.array(data['board']).reshape(1, 3, 3, 1)
-    prediction = model.predict(board)
-    next_move = np.argmax(prediction)
+    raw_board = data['board'] 
+    current_turn = data.get('turn', 1) 
+
+    standardized_board = np.array(raw_board) * current_turn
+    input_board = standardized_board.reshape(1, 3, 3, 1)
+    predictions = model.predict(input_board, verbose=0)[0]
+    sorted_moves = np.argsort(predictions)[::-1]
     
-    flat_board = data['board']
-    if flat_board[next_move] != 0:
-        sorted_indices = np.argsort(prediction[0])[::-1]
-        for move in sorted_indices:
-            if flat_board[move] == 0:
-                next_move = move
-                break
+    next_move = None
+    for move in sorted_moves:
+        if raw_board[move] == 0: 
+            next_move = move
+            break
+            
+    if next_move is None:
+        next_move = raw_board.index(0)
+
+    print(f"Turn: {current_turn}, Best Predicted Values: {predictions[next_move]}, Move: {next_move}")
     
-    print(f"Prediction: {prediction}, Next move: {next_move}")
-    return jsonify({'next_move': int(next_move)})
+    return jsonify({
+        'next_move': int(next_move),
+        'confidence': float(predictions[next_move])
+    })
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=5000)
